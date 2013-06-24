@@ -108,7 +108,10 @@ define apache::vhost(
     $setenvif           = [],
     $block              = [],
     $ensure             = 'present',
-    $custom_fragment    = undef
+    $custom_fragment    = undef,
+    $itk_user           = 'apache',
+    $itk_group          = 'apache',
+    $itk_maxclients     = '100'
   ) {
   # The base class must be included first because it is used by parameter defaults
   if ! defined(Class['apache']) {
