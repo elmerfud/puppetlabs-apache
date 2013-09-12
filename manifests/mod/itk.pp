@@ -4,17 +4,17 @@ class apache::mod::itk (
   $maxspareservers     = '20',
   $serverlimit         = '256',
   $maxclients          = '256',
-  $maxrequestsperchild = '4000'
+  $maxrequestsperchild = '4000',
 ) {
-  if defined(Class['apache::mod::worker']) {
-    fail('May not include both apache::mod::worker and apache::mod::itk on the same node')
-  }
   if defined(Class['apache::mod::prefork']) {
-    fail('May not include both apache::mod::prefork and apache::mod::itk on the same node')
+    fail('May not include both apache::mod::itk and apache::mod::prefork on the same node')
+  }
+  if defined(Class['apache::mod::worker']) {
+    fail('May not include both apache::mod::itk and apache::mod::worker on the same node')
   }
   File {
     owner => 'root',
-    group => 'root',
+    group => $apache::params::root_group,
     mode  => '0644',
   }
 
@@ -28,6 +28,9 @@ class apache::mod::itk (
   file { "${apache::mod_dir}/itk.conf":
     ensure  => file,
     content => template('apache/mod/itk.conf.erb'),
+    require => Exec["mkdir ${apache::mod_dir}"],
+    before  => File[$apache::mod_dir],
+    notify  => Service['httpd'],
   }
 
   case $::osfamily {
@@ -47,7 +50,10 @@ class apache::mod::itk (
     'debian': {
       file { "${apache::mod_enable_dir}/itk.conf":
         ensure => link,
-        target => "${apache::mod_dir}/itk.conf";
+        target => "${apache::mod_dir}/itk.conf",
+        require => Exec["mkdir ${apache::mod_enable_dir}"],
+        before  => File[$apache::mod_enable_dir],
+        notify  => Service['httpd'];
       }
       package { 'apache2-mpm-itk':
         ensure => present;

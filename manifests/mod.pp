@@ -57,7 +57,11 @@ define apache::mod (
     group   => 'root',
     mode    => '0644',
     content => "LoadModule ${mod}_module ${lib_path}/${lib_REAL}\n",
-    require => Package['httpd'],
+    require => [
+      Package['httpd'],
+      Exec["mkdir ${mod_dir}"],
+    ],
+    before  => File[$mod_dir],
     notify  => Service['httpd'],
   }
 
@@ -70,7 +74,11 @@ define apache::mod (
       owner   => 'root',
       group   => 'root',
       mode    => '0644',
-      require => File["${mod}.load"],
+      require => [
+        File["${mod}.load"],
+        Exec["mkdir ${enable_dir}"],
+      ],
+      before  => File[$enable_dir],
       notify  => Service['httpd'],
     }
     # Each module may have a .conf file as well, which should be
@@ -84,7 +92,11 @@ define apache::mod (
         owner   => 'root',
         group   => 'root',
         mode    => '0644',
-        require => File["${mod}.conf"],
+        require => [
+          File["${mod}.conf"],
+          Exec["mkdir ${enable_dir}"],
+        ],
+        before  => File[$enable_dir],
         notify  => Service['httpd'],
       }
     }

@@ -28,32 +28,35 @@ class apache (
   $serveradmin          = 'root@localhost',
   $sendfile             = false,
   $error_documents      = false,
+  $httpd_dir            = $apache::params::httpd_dir,
   $confd_dir            = $apache::params::confd_dir,
   $vhost_dir            = $apache::params::vhost_dir,
+  $vhost_enable_dir     = $apache::params::vhost_enable_dir,
   $mod_dir              = $apache::params::mod_dir,
   $mod_enable_dir       = $apache::params::mod_enable_dir,
   $mpm_module           = $apache::params::mpm_module,
   $conf_template        = $apache::params::conf_template,
+  $servername           = $apache::params::servername,
   $user                 = $apache::params::user,
-  $group                = $apache::params::group
+  $group                = $apache::params::group,
+  $keepalive            = $apache::params::keepalive,
+  $keepalive_timeout    = $apache::params::keepalive_timeout,
+  $logroot              = $apache::params::logroot,
+  $ports_file           = $apache::params::ports_file,
 ) inherits apache::params {
 
   package { 'httpd':
     ensure => installed,
     name   => $apache::params::apache_name,
+    notify => Class['Apache::Service'],
   }
 
-  validate_bool($default_mods)
   validate_bool($default_vhost)
   # true/false is sufficient for both ensure and enable
   validate_bool($service_enable)
-  #if $mpm_module {
-  #  validate_re($mpm_module, '(prefork|worker|itk)')
-  #}
-
-  $httpd_dir  = $apache::params::httpd_dir
-  $ports_file = $apache::params::ports_file
-  $logroot    = $apache::params::logroot
+  if $mpm_module {
+    validate_re($mpm_module, '(prefork|worker|itk)')
+  }
 
   # declare the web server user and group
   # Note: requiring the package means the package ought to create them and not puppet
@@ -66,14 +69,10 @@ class apache (
     ensure  => present,
     gid     => $group,
     require => Package['httpd'],
-    before  => Service['httpd'],
   }
 
-  service { 'httpd':
-    ensure    => $service_enable,
-    name      => $apache::params::apache_name,
-    enable    => $service_enable,
-    subscribe => Package['httpd'],
+  class { 'apache::service':
+    service_enable => $service_enable,
   }
 
   # Deprecated backwards-compatibility
@@ -84,49 +83,90 @@ class apache (
     $purge_confd = $purge_configs
   }
 
-  file { $apache::confd_dir:
+  Exec {
+    path => '/bin:/sbin:/usr/bin:/usr/sbin',
+  }
+
+  exec { "mkdir ${confd_dir}":
+    creates => $confd_dir,
+    require => Package['httpd'],
+  }
+  file { $confd_dir:
     ensure  => directory,
     recurse => true,
     purge   => $purge_confd,
-    notify  => Service['httpd'],
+    notify  => Class['Apache::Service'],
     require => Package['httpd'],
   }
 
-  if ! defined(File[$apache::mod_dir]) {
-    file { $apache::mod_dir:
+  if ! defined(File[$mod_dir]) {
+    exec { "mkdir ${mod_dir}":
+      creates => $mod_dir,
+      require => Package['httpd'],
+    }
+    file { $mod_dir:
       ensure  => directory,
       recurse => true,
       purge   => $purge_configs,
-      notify  => Service['httpd'],
+      notify  => Class['Apache::Service'],
       require => Package['httpd'],
     }
   }
 
-  if $apache::mod_enable_dir and ! defined(File[$apache::mod_enable_dir]) {
-    file { $apache::mod_enable_dir:
+  if $mod_enable_dir and ! defined(File[$mod_enable_dir]) {
+    $mod_load_dir = $mod_enable_dir
+    exec { "mkdir ${mod_enable_dir}":
+      creates => $mod_enable_dir,
+      require => Package['httpd'],
+    }
+    file { $mod_enable_dir:
       ensure  => directory,
       recurse => true,
       purge   => $purge_configs,
-      notify  => Service['httpd'],
+      notify  => Class['Apache::Service'],
+      require => Package['httpd'],
+    }
+  } else {
+    $mod_load_dir = $mod_dir
+  }
+
+  if ! defined(File[$vhost_dir]) {
+    exec { "mkdir ${vhost_dir}":
+      creates => $vhost_dir,
+      require => Package['httpd'],
+    }
+    file { $vhost_dir:
+      ensure  => directory,
+      recurse => true,
+      purge   => $purge_configs,
+      notify  => Class['Apache::Service'],
       require => Package['httpd'],
     }
   }
 
-  if ! defined(File[$apache::vhost_dir]) {
-    file { $apache::vhost_dir:
+  if $vhost_enable_dir and ! defined(File[$vhost_enable_dir]) {
+    $vhost_load_dir = $vhost_enable_dir
+    exec { "mkdir ${vhost_load_dir}":
+      creates => $vhost_load_dir,
+      require => Package['httpd'],
+    }
+    file { $vhost_enable_dir:
       ensure  => directory,
       recurse => true,
       purge   => $purge_configs,
-      notify  => Service['httpd'],
+      notify  => Class['Apache::Service'],
       require => Package['httpd'],
     }
+  } else {
+    $vhost_load_dir = $vhost_dir
   }
 
   concat { $ports_file:
-    owner  => 'root',
-    group  => 'root',
-    mode   => '0644',
-    notify => Service['httpd'],
+    owner   => 'root',
+    group   => 'root',
+    mode    => '0644',
+    notify  => Class['Apache::Service'],
+    require => Package['httpd'],
   }
   concat::fragment { 'Apache ports header':
     target  => $ports_file,
@@ -169,14 +209,26 @@ class apache (
     # - $vhost_dir
     # - $error_documents
     # - $error_documents_path
+    # - $keepalive
+    # - $keepalive_timeout
     file { "${apache::params::conf_dir}/${apache::params::conf_file}":
       ensure  => file,
       content => template($conf_template),
-      notify  => Service['httpd'],
+      notify  => Class['Apache::Service'],
       require => Package['httpd'],
     }
-    class { 'apache::default_mods':
-      all => $default_mods
+
+    # preserve back-wards compatibility to the times when default_mods was
+    # only a boolean value. Now it can be an array (too)
+    if is_array($default_mods) {
+      class { 'apache::default_mods':
+        all  => false,
+        mods => $default_mods,
+      }
+    } else {
+      class { 'apache::default_mods':
+        all => $default_mods,
+      }
     }
     if $mpm_module {
       class { "apache::mod::${mpm_module}": }
