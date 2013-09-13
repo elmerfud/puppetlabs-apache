@@ -1,5 +1,5 @@
 class apache::mod::php {
-  if ! defined(Class['apache::mod::prefork']) {
+  if defined(Class['apache::mod::worker']) {
     fail('apache::mod::php requires apache::mod::prefork; please enable mpm_module => \'prefork\' on Class[\'apache\']')
   }
 
