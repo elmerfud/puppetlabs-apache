@@ -2,7 +2,18 @@ class apache::mod::php {
   if ! defined(Class['apache::mod::prefork']) {
     fail('apache::mod::php requires apache::mod::prefork; please enable mpm_module => \'prefork\' on Class[\'apache\']')
   }
-  apache::mod { 'php5': }
+
+  case $::osfamily {
+    'redhat': {
+      apache::mod { 
+        'php5': 
+          lib => 'libphp5.so'
+      }
+    }
+    default: {
+      apache::mod { 'php5': }
+    }
+  }
   file { 'php5.conf':
     ensure  => file,
     path    => "${apache::mod_dir}/php5.conf",
