@@ -19,7 +19,7 @@ class apache::mod::php {
     path    => "${apache::mod_dir}/php5.conf",
     content => template('apache/mod/php5.conf.erb'),
     require => [
-      Class['apache::mod::prefork'],
+      Class["apache::mod::${apache::mpm_module}"],
       Exec["mkdir ${apache::mod_dir}"],
     ],
     before  => File[$apache::mod_dir],
